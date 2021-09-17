@@ -7,11 +7,28 @@ const region = 'us-east-1'
 const mediaCaptureBucket = process.env['MEDIA_CAPTURE_BUCKET']
 const aws_account_id = process.env['ACCOUNT_ID']
 
+const startTranscribe = (meetingId) => {
+    var params = {
+        MeetingId: meetingId, /* required */
+        TranscriptionConfiguration: { /* required */
+          EngineTranscribeSettings: {
+            LanguageCode: 'en-US',
+            Region: 'us-east-1',
+          }
+        }
+      };
+      
+      chime.startMeetingTranscription(params, function(err, data) {
+        if (err) console.log(err, err.stack); // an error occurred
+        else     console.log(data);           // successful response
+      });
+}
+
 exports.handler = async (event, context) => {
     const body =  JSON.parse(event.body)
     console.log(body) 
     const setRecording = body.setRecording
-    
+
     if (setRecording) {
         const deleteRequest = {
             "MediaPipelineId": body.mediaPipeLine
@@ -31,6 +48,7 @@ exports.handler = async (event, context) => {
             return response
     } else {
         const meetingId = body.meetingId
+        startTranscribe(meetingId)
         const captureRequest = {
             "SourceType": "ChimeSdkMeeting",
             "SourceArn": "arn:aws:chime::" + aws_account_id + ":meeting:" + meetingId,

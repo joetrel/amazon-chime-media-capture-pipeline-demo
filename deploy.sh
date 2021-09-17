@@ -41,6 +41,12 @@ echo ""
 echo "Installing Packages"
 echo ""
 yarn
+pushd src/createLambda
+yarn
+popd
+pushd src/recordingLambda
+yarn
+popd
 echo ""
 echo "Building CDK"
 echo ""

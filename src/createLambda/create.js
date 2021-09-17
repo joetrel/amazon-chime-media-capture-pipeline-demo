@@ -34,11 +34,12 @@ async function putInfo(joinInfo) {
         Key: {
           "Title": joinInfo.Title,
         },
-        UpdateExpression: "SET #mi = :mi, #mId = :mId, #ai = list_append(if_not_exists(#ai, :empty), :ai)",
-        ExpressionAttributeNames: { '#mi': 'MeetingInfo', '#mId': 'meetingId', '#ai': 'AttendeeInfo'},
+        UpdateExpression: "SET #mi = :mi, #mId = :mId, #exmId = :exmId, #ai = list_append(if_not_exists(#ai, :empty), :ai)",
+        ExpressionAttributeNames: { '#mi': 'MeetingInfo', '#mId': 'meetingId', '#exmId': 'externalMeetingId', '#ai': 'AttendeeInfo'},
         ExpressionAttributeValues : {
           ":mi": joinInfo.Meeting,
           ":mId": joinInfo.Meeting.MeetingId,
+          ":exmId": joinInfo.Meeting.ExternalMeetingId,
           ":ai": [ joinInfo.Attendee.AttendeeId ],
           ":empty": []
         }
@@ -65,6 +66,7 @@ exports.handler = async (event) => {
   if(isEmppty(meetingInfo)) {
     const meetingRequest = {
       ClientRequestToken: uuidv4(),
+      ExternalMeetingId: uuidv4(),
       MediaRegion: region,
     };
     console.info('Creating new meeting before joining: ' + JSON.stringify(meetingRequest));

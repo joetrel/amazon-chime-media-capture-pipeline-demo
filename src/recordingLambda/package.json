@@ -1,0 +1,10 @@
+{
+  "name": "recordingLambda",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.990.0",
+    "uuid": "^8.3.2"
+  }
+}

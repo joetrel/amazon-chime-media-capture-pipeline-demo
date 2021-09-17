@@ -11,144 +11,153 @@ export class MediaCaptureDemo extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string) {
     super(scope, id);
 
-      const meetingsTable = new dynamodb.Table(this, 'meetings', {
+	const meetingsTable = new dynamodb.Table(this, 'meetings', {
         partitionKey: {
-          name: 'Title',
-          type: dynamodb.AttributeType.STRING
+			name: 'Title',
+			type: dynamodb.AttributeType.STRING
         },
         removalPolicy: cdk.RemovalPolicy.DESTROY,
         timeToLiveAttribute: 'TTL',
         billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,            
-      });
+    });
       
-      meetingsTable.addGlobalSecondaryIndex({
+    meetingsTable.addGlobalSecondaryIndex({
         indexName: 'meetingIdIndex',
         partitionKey: {
-          name: 'meetingId',
-          type: dynamodb.AttributeType.STRING
+			name: 'meetingId',
+			type: dynamodb.AttributeType.STRING
         },
         projectionType: dynamodb.ProjectionType.ALL
-      })
+    })
 
-      const mediaCaptureBucket = new s3.Bucket(this, 'mediaCaptureBucket', {
-        publicReadAccess: false,
+    const storageTable = new dynamodb.Table(this, 'storage', {
+        partitionKey: {
+			name: 'ExternalMeetingId',
+			type: dynamodb.AttributeType.STRING
+        },
         removalPolicy: cdk.RemovalPolicy.DESTROY,
-        autoDeleteObjects: true 
-      });
+        timeToLiveAttribute: 'TTL',
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,            
+    });      
 
-      const mediaCaptureBucketPolicy = new iam.PolicyStatement({
+    const mediaCaptureBucket = new s3.Bucket(this, 'mediaCaptureBucket', {
+		publicReadAccess: false,
+		removalPolicy: cdk.RemovalPolicy.DESTROY,
+		autoDeleteObjects: true 
+    });
+
+    const mediaCaptureBucketPolicy = new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
-          's3:PutObject',
-          's3:PutObjectAcl'
+			's3:PutObject',
+			's3:PutObjectAcl'
         ],
         resources: [
-          mediaCaptureBucket.bucketArn,
-          `${mediaCaptureBucket.bucketArn}/*`
+			mediaCaptureBucket.bucketArn,
+			`${mediaCaptureBucket.bucketArn}/*`
         ],
         sid: 'AWSChimeMediaCaptureBucketPolicy',
       })
   
-      mediaCaptureBucketPolicy.addServicePrincipal('chime.amazonaws.com')
-      mediaCaptureBucket.addToResourcePolicy(mediaCaptureBucketPolicy)
+	mediaCaptureBucketPolicy.addServicePrincipal('chime.amazonaws.com')
+	mediaCaptureBucket.addToResourcePolicy(mediaCaptureBucketPolicy)
 
-      const lambdaChimeRole = new iam.Role(this, 'LambdaChimeRole', {
-        assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      });
+	const storageBucket = new s3.Bucket(this, 'storageBucket', {
+		publicReadAccess: false,
+		removalPolicy: cdk.RemovalPolicy.DESTROY,
+		autoDeleteObjects: true 
+	});
+
+	const lambdaChimeRole = new iam.Role(this, 'LambdaChimeRole', {
+		assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+	});
   
-      lambdaChimeRole.addToPolicy(new iam.PolicyStatement({
-        resources: ['*'],
-        actions: ['chime:*']}));
-      
-      lambdaChimeRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole"));
-      
-      const sdkBucket = s3.Bucket.fromBucketName(this,'amazon-chime-blog-assets','amazon-chime-blog-assets')
+	lambdaChimeRole.addToPolicy(new iam.PolicyStatement({
+		resources: ['*'],
+		actions: ['chime:*']}));
+	
+	lambdaChimeRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole"));
+	
+	const createLambda = new lambda.Function(this, 'create', {
+		code: lambda.Code.fromAsset("src/createLambda"),
+		handler: 'create.handler',
+		runtime: lambda.Runtime.NODEJS_14_X,
+		timeout: Duration.seconds(60),
+		environment: {
+			MEETINGS_TABLE_NAME: meetingsTable.tableName,
+		},
+		role: lambdaChimeRole
+	});
 
-      // const sdkLayer = new lambda.LayerVersion(this, 'aws-sdk', {
-      //   code: new lambda.S3Code(sdkBucket, 'aws-sdk2_924_0.zip'),
-      //   compatibleRuntimes: [lambda.Runtime.NODEJS_14_X],
-      //   license: 'Apache-2.0',
-      //   description: 'aws-sdk Layer',
-      // });
+	meetingsTable.grantReadWriteData(createLambda);
 
-      const createLambda = new lambda.Function(this, 'create', {
-          code: lambda.Code.fromAsset("src/createLambda"),
-          handler: 'create.handler',
-          runtime: lambda.Runtime.NODEJS_14_X,
-          timeout: Duration.seconds(60),
-          // layers: [ sdkLayer ],
-          environment: {
-            MEETINGS_TABLE_NAME: meetingsTable.tableName,
-          },
-          role: lambdaChimeRole
-      });
+	const recordingLambda = new lambda.Function(this, 'recording', {
+		code: lambda.Code.fromAsset("src/recordingLambda"),
+		handler: 'recording.handler',
+		runtime: lambda.Runtime.NODEJS_14_X,
+		role: lambdaChimeRole,
+		timeout: Duration.seconds(60),          
+		environment: {
+			MEDIA_CAPTURE_BUCKET: mediaCaptureBucket.bucketName,
+			ACCOUNT_ID: cdk.Aws.ACCOUNT_ID
+		},          
+	});
 
-      meetingsTable.grantReadWriteData(createLambda);
+	mediaCaptureBucket.grantReadWrite(recordingLambda)
 
-      const recordingLambda = new lambda.Function(this, 'recording', {
-          code: lambda.Code.fromAsset("src/recordingLambda"),
-          handler: 'recording.handler',
-          runtime: lambda.Runtime.NODEJS_14_X,
-          role: lambdaChimeRole,
-          timeout: Duration.seconds(60),          
-          // layers: [ sdkLayer ],
-          environment: {
-            MEDIA_CAPTURE_BUCKET: mediaCaptureBucket.bucketName,
-            ACCOUNT_ID: cdk.Aws.ACCOUNT_ID
-          },          
-      });
+	const processLambda = new lambda.DockerImageFunction(this, 'proces', {
+		code: lambda.DockerImageCode.fromImageAsset("src/processLambda", {
+			cmd: [ 'app.handler' ],
+			entrypoint: ['/entry.sh'],}),
+			environment: {
+				MEDIA_CAPTURE_BUCKET: mediaCaptureBucket.bucketName,
+				STORAGE_BUCKET: storageBucket.bucketName,
+				MEETINGS_TABLE_NAME: meetingsTable.tableName,
+				STORAGE_TABLE_NAME: storageTable.tableName            
+			},
+		timeout: Duration.minutes(15),
+		memorySize: 10240
+		})
+	
+	meetingsTable.grantReadWriteData(processLambda);
+	storageTable.grantReadWriteData(processLambda)
+	mediaCaptureBucket.grantReadWrite(processLambda);
+	storageBucket.grantReadWrite(processLambda)
 
-      mediaCaptureBucket.grantReadWrite(recordingLambda)
+	const processOutputRule = new events.Rule(this, 'processRecordingRule', {
+		eventPattern:{
+			"source": ["aws.chime"],
+			"detailType": ["Chime Media Pipeline State Change"],
+			"detail": {
+				"eventType": ["chime:MediaPipelineDeleted"]
+			}
+		}
+	})
 
-      const processLambda = new lambda.DockerImageFunction(this, 'proces', {
-        code: lambda.DockerImageCode.fromImageAsset("src/processLambda", {
-          cmd: [ 'app.handler' ],
-          entrypoint: ['/entry.sh'],}),
-          environment: {
-            MEDIA_CAPTURE_BUCKET: mediaCaptureBucket.bucketName,
-            MEETINGS_TABLE_NAME: meetingsTable.tableName            
-          },
-        timeout: Duration.minutes(15),
-        memorySize: 10240
-        })
-    
-      meetingsTable.grantReadWriteData(processLambda);
-      mediaCaptureBucket.grantReadWrite(processLambda);
+	processOutputRule.addTarget(new targets.LambdaFunction(processLambda))
 
-      const processOutputRule = new events.Rule(this, 'processRecordingRule', {
-        eventPattern:{
-          "source": ["aws.chime"],
-          "detailType": ["Chime Media Pipeline State Change"],
-          "detail": {
-            "eventType": ["chime:MediaPipelineDeleted"]
-          }
-        }
-      })
+	const api = new apigateway.RestApi(this, 'meetingApi', {
+		endpointConfiguration: {
+			types: [ apigateway.EndpointType.REGIONAL ]
+		}
+	});
 
-    processOutputRule.addTarget(new targets.LambdaFunction(processLambda))
+	const apiURL = new cdk.CfnOutput(this, 'apiURL', { 
+		value: api.url,
+	});        
 
-      const api = new apigateway.RestApi(this, 'meetingApi', {
-          endpointConfiguration: {
-            types: [ apigateway.EndpointType.REGIONAL ]
-          }
-      });
+	
+	const create = api.root.addResource('create');
+	const createIntegration = new apigateway.LambdaIntegration(createLambda);
+	create.addMethod('POST', createIntegration);
+	addCorsOptions(create);
 
-      const apiURL = new cdk.CfnOutput(this, 'apiURL', { 
-        value: api.url,
-      });        
-
-    
-      const create = api.root.addResource('create');
-      const createIntegration = new apigateway.LambdaIntegration(createLambda);
-      create.addMethod('POST', createIntegration);
-      addCorsOptions(create);
-
-      const record = api.root.addResource('record');
-      const recordIntegration = new apigateway.LambdaIntegration(recordingLambda);
-      record.addMethod('POST', recordIntegration);
-      addCorsOptions(record);
+	const record = api.root.addResource('record');
+	const recordIntegration = new apigateway.LambdaIntegration(recordingLambda);
+	record.addMethod('POST', recordIntegration);
+	addCorsOptions(record);
     };
-  };
+};
 
 
 export function addCorsOptions(apiResource: apigateway.IResource) {
