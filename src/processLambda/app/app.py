@@ -67,7 +67,8 @@ def process_files(objs_keys, MEETING_ID, file_type, *attendee):
                         
         file_name = file_type + '.txt'
         with open('/tmp/' + file_name, 'w') as event_file:
-            event_file.write(str(events))
+            for event in events:
+                event_file.write(str(event)+"\n")
 
     return file_name
     
