@@ -49,14 +49,15 @@ def process_files(objs_keys, MEETING_ID, file_type, *attendee):
         with open('/tmp/' + file_type + '_list.txt', 'w') as f:
             for k in objs_keys:
                 basename = os.path.splitext(k)[0]
-                ffmpeg_cmd = "ffmpeg -i /tmp/" + k + " -bsf:v h264_mp4toannexb -f mpegts -framerate 15 -c copy /tmp/" + basename + "-" + file_type + ".ts -y"
-                command1 = shlex.split(ffmpeg_cmd)
-                p1 = subprocess.run(command1, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                f.write(f'file \'/tmp/{basename}-{file_type}.ts\'\n')
+                # ffmpeg_cmd = "ffmpeg -i /tmp/" + k + " -bsf:v h264_mp4toannexb -f mpegts -framerate 15 -c copy /tmp/" + basename + "-" + file_type + ".ts -y"
+                # command1 = shlex.split(ffmpeg_cmd)
+                # p1 = subprocess.run(command1, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                f.write(f'file \'/tmp/{k}\'\n')
         
-        file_name = file_type + '.wav'
+        file_name = file_type + '.mp4'
         ffmpeg_cmd = "ffmpeg -f concat -safe 0 -i /tmp/" + file_type + "_list.txt  -c copy /tmp/" + file_name + " -y"
-        subprocess.run(shlex.split(ffmpeg_cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p1 = subprocess.run(shlex.split(ffmpeg_cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print(p1)
 
     if file_type == 'events':
         events = []
